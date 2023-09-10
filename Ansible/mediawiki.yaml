@@ -1,0 +1,79 @@
+---
+- name: Install MediaWiki on RHEL 8
+  hosts: your_target_host
+  become: yes
+
+  vars:
+    mediawiki_version: "1.34"  # Set the desired MediaWiki version here
+    mariadb_root_password: Test@12345
+
+  tasks:
+    - name: Install EPEL Repository (if not already installed)
+      yum:
+        name: epel-release
+        state: present
+
+    - name: Install required packages
+      package:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - httpd
+        - php
+        - php-mysqlnd
+        - php-xml
+        - php-gd
+        - php-opcache
+        - mariadb-server
+        - php-json
+        - php-mbstring
+
+    - name: Start and enable Apache
+      service:
+        name: httpd
+        state: started
+        enabled: yes
+
+    - name: Start and enable MariaDB
+      service:
+        name: mariadb
+        state: started
+        enabled: yes
+
+    - name: Configure MariaDB root password
+      mysql_user:
+        name: root
+        password: "{{ mariadb_root_password }}"
+        login_user: root
+        login_password: ""
+      when: ansible_distribution_major_version == "8"
+
+    - name: Download MediaWiki
+      get_url:
+        url: "https://releases.wikimedia.org/mediawiki/{{ mediawiki_version }}/mediawiki-{{ mediawiki_version }}.tar.gz"
+        dest: "/tmp/mediawiki-{{ mediawiki_version }}.tar.gz"
+
+    - name: Extract MediaWiki
+      ansible.builtin.unarchive:
+        src: "/tmp/mediawiki-{{ mediawiki_version }}.tar.gz"
+        dest: "/var/www/html/"
+        remote_src: yes
+      notify: Reload Apache
+
+    - name: Create MediaWiki symlink
+      file:
+        src: "/usr/share/mediawiki"
+        dest: "/var/www/html/mediawiki"
+        state: link
+
+    - name: Configure Firewall (allow HTTP)
+      firewalld:
+        service: http
+        permanent: yes
+        state: enabled
+
+    - name: Disable SELinux
+      selinux:
+        policy: targeted
+        state: disabled
+
