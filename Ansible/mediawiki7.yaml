@@ -1,0 +1,116 @@
+---
+- name: Install MediaWiki on RHEL 8.4
+  hosts: azure_vm
+  become: yes
+  vars:
+    ansible_python_interpreter: /usr/bin/python3
+
+  tasks:
+    - name: Update package cache
+      package:
+        name: "*"
+        state: latest
+      when: ansible_os_family == "RedHat"
+
+    - name: Install required packages
+      package:
+        name: "{{ item }}"
+        state: present
+      loop:
+        - httpd
+        - mariadb-server
+        - php
+        - php-mysqlnd  # Use php-mysqlnd or php-mysqli based on availability
+        - php-xml
+        - php-gd
+        - php-intl
+        - php-mbstring
+        - php-apcu
+      when: ansible_os_family == "RedHat"
+
+    - name: Start and enable Apache
+      service:
+        name: httpd
+        state: started
+        enabled: yes
+      when: ansible_os_family == "RedHat"
+
+    - name: Start and enable MySQL
+      service:
+        name: mariadb
+        state: started
+        enabled: yes
+      when: ansible_os_family == "RedHat"
+
+    - name: Create MySQL database for MediaWiki
+      community.mysql.mysql_db:
+        name: mymediawiki
+        state: present
+        login_user: root
+        login_password: your_root_password
+      when: ansible_os_family == "RedHat"
+
+    - name: Create MySQL user for MediaWiki
+      community.mysql.mysql_user:
+        name: mediawiki
+        password: mypassword
+        host: localhost
+        priv: "mymediawiki.*:ALL"
+        state: present
+        login_user: root
+        login_password: your_root_password
+      when: ansible_os_family == "RedHat"
+
+    - name: Install MySQL development package
+      package:
+        name: mysql-devel
+        state: present
+      when: ansible_python.version.major == 3
+
+    - name: Install mysqlclient for Python 3.x
+      pip:
+        name: mysqlclient
+        state: present
+      when: ansible_python.version.major == 3
+
+    - name: Download MediaWiki
+      get_url:
+        url: "https://releases.wikimedia.org/mediawiki/{{ mediawiki_version }}/mediawiki-{{ mediawiki_version }}.tar.gz"
+        dest: /tmp/mediawiki.tar.gz
+      vars:
+        mediawiki_version: "1.35.2"  # Change this to the desired version
+      when: ansible_os_family == "RedHat"
+
+    - name: Extract MediaWiki
+      unarchive:
+        src: /tmp/mediawiki.tar.gz
+        dest: /var/www/html/
+        remote_src: yes
+      when: ansible_os_family == "RedHat"
+
+    - name: Set MediaWiki permissions
+      file:
+        path: /var/www/html/mediawiki
+        owner: apache
+        group: apache
+        recurse: yes
+      when: ansible_os_family == "RedHat"
+
+    - name: Configure MediaWiki
+      template:
+        src: LocalSettings.php.j2
+        dest: /var/www/html/mediawiki/LocalSettings.php
+      when: ansible_os_family == "RedHat"
+
+    - name: Remove MediaWiki tarball
+      file:
+        path: /tmp/mediawiki.tar.gz
+        state: absent
+      when: ansible_os_family == "RedHat"
+
+    - name: Restart Apache
+      service:
+        name: httpd
+        state: restarted
+      when: ansible_os_family == "RedHat"
+
